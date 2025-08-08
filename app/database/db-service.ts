@@ -5,7 +5,7 @@ SQLite.enablePromise(true);
 export const getDBConnection = async () => {
   return SQLite.openDatabase({ name: 'Alerta_Mesh.db', location: 'default' });
 };
-
+     
 // Crear la tabla si no existe
 export const createTable = async (db: SQLite.SQLiteDatabase) => {
   const query = `

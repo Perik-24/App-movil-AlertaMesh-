@@ -15,14 +15,24 @@ import {
   createTable,
   insertAlerta,
   getAlertas,
+  deleteAllAlertas,
 }from '../database/db-service.ts';
-
-
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../(tabs)/types"; // Ajusta la ruta
+import PushNotification from 'react-native-push-notification';
 
 
 const DEVICE_NAME = 'ESP32_Alerta';
 
 const App = () => {
+  
+type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Tabs'>;
+
+const navigation = useNavigation<NavigationProp>();
+
+const [otherPhoneDevice, setOtherPhoneDevice] = useState<BluetoothDevice | null>(null);
+
   const [device, setDevice] = useState<BluetoothDevice | null>(null);
   const [connected, setConnected] = useState(false);
 
@@ -35,6 +45,38 @@ const App = () => {
     };
     init();
   }, []);
+
+  useEffect(() => {
+  if (otherPhoneDevice) {
+    const subscription = otherPhoneDevice.onDataReceived(async (data) => {
+      try {
+        const receivedData = JSON.parse(data.data.trim());
+        const { alerta, historial } = receivedData;
+
+        // Guarda el nuevo historial en SQLite del teléfono receptor
+        const db = await getDBConnection();
+        // Borra el historial viejo y inserta el nuevo para mantenerlo sincronizado
+        await deleteAllAlertas(db);
+        for (const item of historial) {
+          await insertAlerta(db, item.TIPO_ALERTA, item.MENSAJE, item.FECHA);
+        }
+
+        // Muestra la notificación al usuario
+        // Aquí debes usar la librería de notificaciones
+        // (Ejemplo con react-native-push-notification)
+        PushNotification.localNotification({
+          title: `Alerta recibida: ${alerta.tipo}`,
+          message: alerta.mensaje,
+        });
+
+      } catch (error) {
+        console.error("Error al procesar los datos de la alerta:", error);
+      }
+    });
+
+    return () => subscription.remove();
+  }
+}, [otherPhoneDevice]);
 
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
@@ -93,19 +135,48 @@ const App = () => {
   const sendAlert = async (tipo: string, mensaje: string) => {
   if (device && connected) {
     try {
-      await device.write('ALERTA\n');
+      await device.write('ALERTA\n');// Envía la alerta al ESP32
+
       const db = await getDBConnection();
       const fecha = new Date().toISOString();
       await insertAlerta(db, tipo, mensaje, fecha);
-      const alertas = await getAlertas(db); // puedes loguearlo si quieres
-      console.log('Alertas:', alertas);
-      Alert.alert('Alerta enviada');
+
+      const alertasCompletas = await getAlertas(db);
+      const dataToSend = JSON.stringify({
+        alerta: { tipo, mensaje, fecha },
+        historial: alertasCompletas
+      });
+
+      if (otherPhoneDevice) {
+        await otherPhoneDevice.write(dataToSend + '\n'); // Envía al otro teléfono
+        Alert.alert('Alerta enviada a ESP32 y otro teléfono');
+      } else {
+        Alert.alert('Alerta enviada a ESP32, pero el otro teléfono no está conectado.');
+      }
     } catch (error) {
-      Alert.alert('Error al enviar alerta');
       console.error(error);
     }
   } else {
     Alert.alert('Dispositivo no conectado');
+  }
+};
+
+const connectToOtherPhone = async () => {
+  try {
+    const devices = await RNBluetoothClassic.getBondedDevices();
+    // Encuentra el otro teléfono por su nombre (ej. 'MI_OTRO_TELEFONO')
+    const otherPhone = devices.find(d => d.name === 'S22+ de Perik24');
+
+    if (otherPhone) {
+      await otherPhone.connect();
+      // Guarda la conexión del otro teléfono en un nuevo estado
+      // Ej: setOtherPhoneDevice(otherPhone);
+      Alert.alert('Conectado con el otro teléfono');
+    } else {
+      Alert.alert('No se encontró el otro teléfono');
+    }
+  } catch (err) {
+    console.error('Error al conectar con el otro teléfono:', err);
   }
 };
 
@@ -144,7 +215,14 @@ const App = () => {
           onPress={() => sendAlert('Incendio', 'Se detectó un posible incendio')}
         />
       </View>
-
+      <View style={styles.card2}>
+        <Text style={styles.title2}>Nuevo Boton</Text>
+        <Button
+          title="+"
+          onPress={() => navigation.navigate('NewBtn')}
+        />
+      </View>
+      <Button title="Conectar a otro celular" onPress={connectToOtherPhone} />
     </ScrollView>
 
   );

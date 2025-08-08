@@ -7,16 +7,16 @@ const Tab = createBottomTabNavigator();
 
 export const BottomTab = () => {
     return (
-        <Tab.Navigator screenOptions={{ tabBarActiveTintColor: '#e91e63' }}>
+        <Tab.Navigator screenOptions={{ tabBarActiveTintColor: '#e91e63', animation: 'shift' }}>
             <Tab.Screen name="Alerta Mesh" component={App} options={{
-                headerTitleAlign: "center", tabBarIcon: ({ color }) =>
+                headerTitleAlign: "center", tabBarLabel: "Inicio", tabBarIcon: ({ color }) =>
                     <MaterialIcons name="home" color={color} size={20} />
             }} />
-            <Tab.Screen name="Historial de Alertas" component={require('../screens/history').default} options={{
+            <Tab.Screen name="Historial" component={require('../screens/history').default} options={{
                 headerTitleAlign: "center", tabBarIcon: ({ color }) =>
                     <MaterialIcons name="history" color={color} size={20} />
             }} />
-            <Tab.Screen name="Config" component={require('../screens/config').default} options={{
+            <Tab.Screen name="Configuracion" component={require('../screens/config').default} options={{
                 headerTitleAlign: "center", tabBarIcon: ({ color }) =>
                     <MaterialIcons name="settings" color={color} size={20} />
             }} />
