@@ -10,6 +10,15 @@ import {
   ScrollView,
 } from 'react-native';
 import RNBluetoothClassic, { BluetoothDevice } from 'react-native-bluetooth-classic';
+import {
+  getDBConnection,
+  createTable,
+  insertAlerta,
+  getAlertas,
+}from '../database/db-service.ts';
+
+
+
 
 const DEVICE_NAME = 'ESP32_Alerta';
 
@@ -17,9 +26,14 @@ const App = () => {
   const [device, setDevice] = useState<BluetoothDevice | null>(null);
   const [connected, setConnected] = useState(false);
 
-  useEffect(() => {
-    requestPermissions();
-    checkConnection();
+    useEffect(() => {
+    const init = async () => {
+      await requestPermissions();
+      const db = await getDBConnection();
+      await createTable(db);
+      await checkConnection();
+    };
+    init();
   }, []);
 
   const requestPermissions = async () => {
@@ -53,6 +67,8 @@ const App = () => {
     }
   };
 
+
+
   const connectToESP32 = async () => {
     try {
       const devices = await RNBluetoothClassic.getBondedDevices();
@@ -74,19 +90,24 @@ const App = () => {
     }
   };
 
-  const sendAlert = async () => {
-    if (device && connected) {
-      try {
-        await device.write('ALERTA\n');
-        Alert.alert('Alerta enviada');
-      } catch (error) {
-        Alert.alert('Error al enviar alerta');
-        console.error(error);
-      }
-    } else {
-      Alert.alert('Dispositivo no conectado');
+  const sendAlert = async (tipo: string, mensaje: string) => {
+  if (device && connected) {
+    try {
+      await device.write('ALERTA\n');
+      const db = await getDBConnection();
+      const fecha = new Date().toISOString();
+      await insertAlerta(db, tipo, mensaje, fecha);
+      const alertas = await getAlertas(db); // puedes loguearlo si quieres
+      console.log('Alertas:', alertas);
+      Alert.alert('Alerta enviada');
+    } catch (error) {
+      Alert.alert('Error al enviar alerta');
+      console.error(error);
     }
-  };
+  } else {
+    Alert.alert('Dispositivo no conectado');
+  }
+};
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -106,17 +127,33 @@ const App = () => {
         {!connected ? (
           <Button title="Conectar al ESP32" onPress={connectToESP32} />
         ) : (
-          <Button title="Enviar ALERTA" onPress={sendAlert} />
+          <Button title="Revisar conexión" onPress={checkConnection} />
         )}
       </View>
+      <View style={styles.card2}>
+        <Text style={styles.title2}>Alerta Robo</Text>
+        <Button
+          title="Enviar ALERTA"
+          onPress={() => sendAlert('Robo', 'Se detectó un intento de robo')}
+        />
+      </View>
+      <View style={styles.card2}>
+        <Text style={styles.title2}>Alerta Incendio</Text>
+        <Button
+          title="Enviar ALERTA"
+          onPress={() => sendAlert('Incendio', 'Se detectó un posible incendio')}
+        />
+      </View>
+
     </ScrollView>
+
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     padding: 16,
     backgroundColor: '#fff',
   },
@@ -128,11 +165,31 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 5,
+    marginTop: 5,
+  },
+  card2: {
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+    marginTop: 5,
+    marginLeft: 10,
+    marginRight: 10,
+    justifyContent: 'space-between',
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 10,
+  },
+  title2: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'center',
   },
   statusRow: {
     flexDirection: 'row',

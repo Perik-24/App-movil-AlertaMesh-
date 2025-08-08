@@ -12,7 +12,7 @@ export const BottomTab = () => {
                 headerTitleAlign: "center", tabBarIcon: ({ color }) =>
                     <MaterialIcons name="home" color={color} size={20} />
             }} />
-            <Tab.Screen name="History" component={require('../screens/history').default} options={{
+            <Tab.Screen name="Historial de Alertas" component={require('../screens/history').default} options={{
                 headerTitleAlign: "center", tabBarIcon: ({ color }) =>
                     <MaterialIcons name="history" color={color} size={20} />
             }} />
