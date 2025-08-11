@@ -23,7 +23,7 @@ import {
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from '@react-navigation/native';
-import PushNotification from 'react-native-push-notification';
+import { useTheme } from '../ThemeContext'; // Importamos el hook useTheme
 
 type RootStackParamList = {
   Tabs: {
@@ -45,18 +45,31 @@ interface BotonAlerta {
 }
 
 const DEVICE_NAME = 'ESP32_Alerta';
-const OTHER_PHONE_NAME = 'S22+ de Perik24';
+const OTHER_PHONE_NAME = 'S22+ de Perik24'; // Nombre del otro teléfono para la conexión
 
 const App = () => {
 
-  type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Tabs'>;
-
-  const navigation = useNavigation<NavigationProp>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Tabs'>>();
   const route = useRoute<HomeRouteProp>();
+  const [esp32Device, setEsp32Device] = useState<BluetoothDevice | null>(null);
   const [otherPhoneDevice, setOtherPhoneDevice] = useState<BluetoothDevice | null>(null);
-  const [device, setDevice] = useState<BluetoothDevice | null>(null);
+  const [connectedToEsp32, setConnectedToEsp32] = useState(false);
+  const [connectedToOtherPhone, setConnectedToOtherPhone] = useState(false);
   const [connected, setConnected] = useState(false);
   const [botones, setBotones] = useState<BotonAlerta[]>([]);
+  const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const { isDarkMode } = useTheme();
+
+  // ***** CAMBIOS PARA EL MODO OSCURO *****
+  // Ahora definimos los estilos condicionales para todos los elementos
+  const containerStyle = isDarkMode ? styles.darkContainer : styles.lightContainer;
+  const cardStyle = isDarkMode ? styles.darkCard : styles.lightCard;
+  const card2Style = isDarkMode ? styles.darkCard2 : styles.lightCard2;
+  const titleStyle = isDarkMode ? styles.darkTitle : styles.lightTitle;
+  const statusTextStyle = isDarkMode ? styles.darkStatusText : styles.lightStatusText;
+  const buttonTextStyle = isDarkMode ? styles.darkButtonText : styles.lightButtonText;
+  const plusButtonTextStyle = isDarkMode ? styles.darkPlusButtonText : styles.lightPlusButtonText;
+  // ***************************************
 
   const defaultButtons: BotonAlerta[] = [
     { nombre: 'Robo', mensaje: 'Se detectó un intento de robo', prioridad: 'Alta' },
@@ -68,197 +81,198 @@ const App = () => {
     const db = await getDBConnection();
     const botonesGuardados = await getBotones(db);
     const botonesPersonalizados = botonesGuardados.map(b => ({
-            nombre: b.Nombre,
-            mensaje: 'Mensaje predeterminado',
-            prioridad: b.Prioridad,
-        }));
+      nombre: b.Nombre,
+      mensaje: 'Mensaje predeterminado',
+      prioridad: b.Prioridad,
+    }));
     // Combina los botones predeterminados con los de la base de datos
     setBotones([...defaultButtons, ...botonesPersonalizados]);
   };
 
   // Al cargar la pantalla, se revisa si hay un nuevo botón y lo guarda
-    useFocusEffect(
-        useCallback(() => {
-            // Solo necesitamos recargar los botones
-            cargarBotones();
-        }, []) // No depende de route.params, ya que NewBtn lo guarda directamente
-    );
+  useFocusEffect(
+    useCallback(() => {
+      // Solo necesitamos recargar los botones
+      cargarBotones();
+    }, []) // No depende de route.params, ya que NewBtn lo guarda directamente
+  );
 
   useEffect(() => {
-    const init = async () => {
-      await requestPermissions();
-      const db = await getDBConnection();
-      await createTables(db);
-      await checkConnection();
-      await cargarBotones();
+    const checkAndSetup = async () => {
+      const granted = await requestPermissions();
+      if (granted) {
+        setPermissionsGranted(true);
+        const db = await getDBConnection();
+        await createTables(db);
+        await checkConnection();
+        await cargarBotones();
+        //await dropTables(db); // Elimina las tablas si es necesario
+      } else {
+        setPermissionsGranted(false);
+        Alert.alert('Permisos necesarios', 'La aplicación necesita permisos de Bluetooth para funcionar.');
+      }
     };
-    init();
+    checkAndSetup();
   }, []);
 
-  useEffect(() => {
-    if (otherPhoneDevice) {
-      const subscription = otherPhoneDevice.onDataReceived(async (data) => {
-        try {
-          const receivedData = JSON.parse(data.data.trim());
-          const { alerta, historial } = receivedData;
-
-          // Guarda el nuevo historial en SQLite del teléfono receptor
-          const db = await getDBConnection();
-          // Borra el historial viejo y inserta el nuevo para mantenerlo sincronizado
-          await deleteAllAlertas(db);
-          for (const item of historial) {
-            await insertAlerta(db, item.TIPO_ALERTA, item.MENSAJE, item.FECHA, item.PRIORIDAD);
-          }
-
-          // Muestra la notificación al usuario
-          // Aquí debes usar la librería de notificaciones
-          // (Ejemplo con react-native-push-notification)
-          PushNotification.localNotification({
-            title: `Alerta recibida: ${alerta.tipo}`,
-            message: alerta.mensaje,
-          });
-
-        } catch (error) {
-          console.error("Error al procesar los datos de la alerta:", error);
-        }
-      });
-
-      return () => subscription.remove();
-    }
-  }, [otherPhoneDevice]);
-
+  // La función ahora devuelve un booleano para indicar si los permisos se concedieron
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
-      await PermissionsAndroid.requestMultiple([
+      const result = await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
       ]);
+      return (
+        result[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] === PermissionsAndroid.RESULTS.GRANTED &&
+        result[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] === PermissionsAndroid.RESULTS.GRANTED &&
+        result[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] === PermissionsAndroid.RESULTS.GRANTED
+      );
     }
+    // En iOS, los permisos se manejan de otra forma, asumimos que están concedidos
+    return true;
   };
 
   const checkConnection = async () => {
+    // Solo ejecuta si los permisos están concedidos
+    if (!permissionsGranted) return;
+
     try {
       const bondedDevices = await RNBluetoothClassic.getBondedDevices();
       const esp32 = bondedDevices.find(d => d.name === DEVICE_NAME);
+      const otherPhone = bondedDevices.find(d => d.name === OTHER_PHONE_NAME);
 
-      if (!esp32) {
+      if (esp32) {
+        const isConnected = await esp32.isConnected();
+        setConnected(isConnected);
+        setEsp32Device(esp32);
+      } else {
         setConnected(false);
-        setDevice(null);
-        return;
+        setEsp32Device(null);
       }
-
-      const isConnected = await esp32.isConnected();
-      setConnected(isConnected);
-      setDevice(esp32);
+      if (otherPhone) {
+        setOtherPhoneDevice(otherPhone);
+      } else {
+        setOtherPhoneDevice(null);
+      }
     } catch (error) {
       console.error('Error verificando conexión:', error);
       setConnected(false);
-      setDevice(null);
+      setEsp32Device(null);
     }
   };
 
 
 
   const connectToESP32 = async () => {
+    if (!permissionsGranted) {
+      Alert.alert('Permisos no concedidos', 'Por favor, concede los permisos de Bluetooth para continuar.');
+      return;
+    }
+
     try {
       const devices = await RNBluetoothClassic.getBondedDevices();
       const esp32 = devices.find(d => d.name === DEVICE_NAME);
-
       if (!esp32) {
         Alert.alert('No se encontró el dispositivo ESP32');
         return;
       }
-
       const connected = await esp32.connect();
       if (connected) {
-        setDevice(esp32);
+        setEsp32Device(esp32);
         setConnected(true);
         Alert.alert('Conectado con ESP32');
       }
     } catch (err) {
-      console.error('Error al conectar:', err);
-    }
-  };
-
-  const sendAlert = async (alerta: BotonAlerta) => {
-    if (device && connected) {
-      try {
-        await device.write('ALERTA\n');// Envía la alerta al ESP32
-        const db = await getDBConnection();
-        const fecha = new Date().toISOString();
-        await device.write(alerta.nombre + '\n');
-        await device.write('ALERTA\n');// Envía la alerta al ESP32
-
-        await insertAlerta(db, alerta.nombre, alerta.mensaje, fecha, alerta.prioridad);
-
-        // Obtiene el historial completo para sincronizar
-        const alertasCompletas = await getAlertas(db);
-
-        // Prepara los datos para enviar
-        const dataToSend = JSON.stringify({
-          alerta: { tipo: alerta.nombre, mensaje: alerta.mensaje, fecha: fecha, prioridad: alerta.prioridad },
-          historial: alertasCompletas
-        });
-
-        if (otherPhoneDevice) {
-          await otherPhoneDevice.write(dataToSend + '\n'); // Envía al otro teléfono
-          Alert.alert('Alerta enviada a ESP32 y otro teléfono');
-        } else {
-          Alert.alert('Alerta enviada a ESP32, pero el otro teléfono no está conectado.');
-        }
-      } catch (error) {
-        console.error('Error al enviar alerta:', error);
-                Alert.alert('Error al enviar la alerta');
-      }
-    } else {
-      Alert.alert('Dispositivo no conectado');
+      console.error('Error al conectar con ESP32:', err);
+      Alert.alert('Error de conexión', 'No se pudo conectar con el ESP32. ¿Está encendido y emparejado?');
     }
   };
 
   const connectToOtherPhone = async () => {
+    if (!permissionsGranted) {
+      Alert.alert('Permisos no concedidos', 'Por favor, concede los permisos de Bluetooth para continuar.');
+      return;
+    }
+
     try {
-            const devices = await RNBluetoothClassic.getBondedDevices();
-            const otherPhone = devices.find(d => d.name === OTHER_PHONE_NAME);
+      const devices = await RNBluetoothClassic.getBondedDevices();
+      const otherPhone = devices.find(d => d.name === OTHER_PHONE_NAME);
 
-            if (!otherPhone) {
-                Alert.alert('No se encontró el otro teléfono');
-                return;
-            }
+      if (!otherPhone) {
+        Alert.alert('Dispositivo no encontrado', 'Asegúrate de que el otro teléfono esté emparejado con tu teléfono.');
+        return;
+      }
+      await otherPhone.connect();
+      setOtherPhoneDevice(otherPhone);
+      Alert.alert('Conectado con el otro teléfono');
+    } catch (err) {
+      console.error('Error al conectar con el otro teléfono:', err);
+      Alert.alert('Error de conexión', 'No se pudo conectar con el otro teléfono. ¿Está visible y emparejado?');
+    }
+  };
 
-            const connected = await otherPhone.connect();
-            if (connected) {
-                setOtherPhoneDevice(otherPhone);
-                Alert.alert('Conectado con el otro teléfono');
-            } else {
-                // Manejar el caso en que la conexión falle sin lanzar una excepción
-                Alert.alert('Fallo la conexión con el otro teléfono');
-            }
 
-        } catch (err) {
-            console.error('Error al conectar con el otro teléfono:', err);
-            Alert.alert(`Error de conexión: ${err instanceof Error ? err.message : 'Error desconocido'}`);
-        }
-    };
+  const sendAlert = async (alerta: BotonAlerta) => {
+    if (!permissionsGranted) {
+      Alert.alert('Permisos no concedidos', 'Por favor, concede los permisos de Bluetooth para continuar.');
+      return;
+    }
+    const db = await getDBConnection();
+    const fecha = new Date().toISOString();
+    await insertAlerta(db, alerta.nombre, alerta.mensaje, fecha, alerta.prioridad);
+    const alertasCompletas = await getAlertas(db);
+
+    // Enviar a ESP32
+    if (esp32Device && connected) {
+      try {
+        await esp32Device.write(alerta.prioridad + '\n');
+        Alert.alert('Alerta enviada a ESP32');
+      } catch (error) {
+        console.error('Error al enviar alerta a ESP32:', error);
+        Alert.alert('Error al enviar la alerta al ESP32');
+      }
+    } else {
+      Alert.alert('ESP32 no conectado', 'Conéctate al ESP32 para enviar la alerta.');
+    }
+
+    // Enviar al otro teléfono
+    if (otherPhoneDevice && await otherPhoneDevice.isConnected()) {
+      try {
+        const dataToSend = JSON.stringify({
+          alerta: { tipo: alerta.nombre, mensaje: alerta.mensaje, fecha: fecha, prioridad: alerta.prioridad },
+          historial: alertasCompletas
+        });
+        await otherPhoneDevice.write(dataToSend + '\n');
+        Alert.alert('Alerta enviada al otro teléfono');
+      } catch (error) {
+        console.error('Error al enviar alerta al otro teléfono:', error);
+        Alert.alert('Error al enviar la alerta al otro teléfono.');
+      }
+    } else {
+      Alert.alert('El otro teléfono no está conectado', 'Conéctate al otro teléfono para enviar la alerta.');
+    }
+  };
+
 
   // Función de ayuda para obtener el estilo de prioridad
-    const getPriorityStyle = (prioridad: string) => {
-        switch (prioridad) {
-            case 'Baja':
-                return styles['card-Baja'];
-            case 'Media':
-                return styles['card-Media'];
-            case 'Alta':
-                return styles['card-Alta'];
-            default:
-                return {}; // Devuelve un objeto vacío si no hay coincidencia
-        }
-    };
+  const getPriorityStyle = (prioridad: string) => {
+    switch (prioridad) {
+      case 'Baja':
+        return styles['card-Baja'];
+      case 'Media':
+        return styles['card-Media'];
+      case 'Alta':
+        return styles['card-Alta'];
+      default:
+        return {}; // Devuelve un objeto vacío si no hay coincidencia
+    }
+  };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.title}>Dispositivo: {DEVICE_NAME}</Text>
+    <ScrollView contentContainerStyle={[styles.container, containerStyle]}>
+      <View style={[styles.card, cardStyle]}>
+        <Text style={[styles.title, titleStyle]}>Dispositivo: {DEVICE_NAME}</Text>
         <View style={styles.statusRow}>
           <View
             style={[
@@ -266,7 +280,7 @@ const App = () => {
               { backgroundColor: connected ? 'green' : 'red' },
             ]}
           />
-          <Text style={styles.statusText}>
+          <Text style={[styles.statusText, statusTextStyle]}>
             {connected ? 'Conectado' : 'Desconectado'}
           </Text>
         </View>
@@ -277,45 +291,61 @@ const App = () => {
         )}
       </View>
 
+      <View style={[styles.card, cardStyle]}>
+        <Text style={[styles.title, titleStyle]}>Conexión con otro Teléfono</Text>
+        <Text style={statusTextStyle}>Otro Teléfono: {otherPhoneDevice ? 'Emparejado' : 'No emparejado'}</Text>
+        <View style={styles.statusRow}>
+          <View
+            style={[
+              styles.statusIndicator,
+              { backgroundColor: connectedToOtherPhone ? 'green' : 'red' },
+            ]}
+          />
+          <Text style={[styles.statusText, statusTextStyle]}>
+            {connectedToOtherPhone ? 'Conectado' : 'Desconectado'}
+          </Text>
+        </View>
+        {permissionsGranted && !connectedToOtherPhone && (
+          <Button title="Conectar a otro Celular" onPress={connectToOtherPhone} />
+        )}
+      </View>
+
+
       {botones.map((alerta, index) => (
-                <View key={index} style={[styles.card2, getPriorityStyle(alerta.prioridad)]}>
-          <Text style={styles.title2}>{alerta.nombre}</Text>
+        <View key={index} style={[styles.card2, card2Style, getPriorityStyle(alerta.prioridad)]}>
+          <Text style={[styles.title2, titleStyle]}>{alerta.nombre}</Text>
           <TouchableOpacity
             style={styles.boton}
             onPress={() => sendAlert(alerta)}
+            disabled={!permissionsGranted}
           >
-            <Text style={styles.buttonText}>Enviar ALERTA</Text>
+            <Text style={buttonTextStyle}>Enviar ALERTA</Text>
           </TouchableOpacity>
         </View>
       ))}
 
-      <View style={styles.card2}>
-        <Text style={styles.title2}>Nuevo Botón</Text>
+      <View style={[styles.card2, card2Style]}>
+        <Text style={[styles.title2, titleStyle]}>Nuevo Botón</Text>
         <TouchableOpacity
           style={styles.boton}
           onPress={() => navigation.navigate('NewBtn')}
+          disabled={!permissionsGranted}
         >
-          <Text style={styles.buttonText}>+</Text>
+          <Text style={[styles.buttonText, plusButtonTextStyle]}>+</Text>
         </TouchableOpacity>
       </View>
-
-      <TouchableOpacity style={styles.botonCelular} onPress={connectToOtherPhone}>
-        <Text style={styles.buttonText}>Conectar a otro celular</Text>
-      </TouchableOpacity>
     </ScrollView>
-
   );
 };
 
 const styles = StyleSheet.create({
+  // ***** Estilos Generales y Comunes *****
   container: {
     flexGrow: 1,
     justifyContent: 'flex-start',
     padding: 16,
-    backgroundColor: '#fff',
   },
   card: {
-    backgroundColor: '#f9f9f9',
     borderRadius: 12,
     padding: 20,
     shadowColor: '#000',
@@ -326,7 +356,6 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   card2: {
-    backgroundColor: '#f9f9f9',
     borderRadius: 12,
     padding: 20,
     shadowColor: '#000',
@@ -339,17 +368,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   'card-Baja': {
-        borderLeftColor: '#28a745',
-        borderLeftWidth: 5,
-    },
-    'card-Media': {
-        borderLeftColor: '#ffc107',
-        borderLeftWidth: 5,
-    },
-    'card-Alta': {
-        borderLeftColor: '#dc3545',
-        borderLeftWidth: 5,
-    },
+    borderLeftColor: '#28a745',
+    borderLeftWidth: 5,
+  },
+  'card-Media': {
+    borderLeftColor: '#ffc107',
+    borderLeftWidth: 5,
+  },
+  'card-Alta': {
+    borderLeftColor: '#dc3545',
+    borderLeftWidth: 5,
+  },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -384,7 +413,6 @@ const styles = StyleSheet.create({
     marginRight: 25,
   },
   buttonText: {
-    color: 'white', // Color del texto
     fontWeight: 'bold',
   },
   botonCelular: {
@@ -395,6 +423,54 @@ const styles = StyleSheet.create({
     marginLeft: 25,
     marginRight: 25,
     marginTop: 20,
+  },
+
+  // ***** Estilos para el Modo Claro *****
+  lightContainer: {
+    backgroundColor: '#fff',
+  },
+  lightCard: {
+    backgroundColor: '#f9f9f9',
+  },
+  lightCard2: {
+    backgroundColor: '#f9f9f9',
+  },
+  lightTitle: {
+    color: '#000',
+  },
+  lightStatusText: {
+    color: '#000',
+  },
+  lightButtonText: {
+    color: 'white',
+  },
+  lightPlusButtonText: {
+    color: 'white',
+  },
+
+  // ***** Estilos para el Modo Oscuro *****
+  darkContainer: {
+    backgroundColor: '#121212',
+  },
+  darkCard: {
+    backgroundColor: '#1e1e1e',
+    shadowColor: '#fff',
+  },
+  darkCard2: {
+    backgroundColor: '#1e1e1e',
+    shadowColor: '#fff',
+  },
+  darkTitle: {
+    color: '#fff',
+  },
+  darkStatusText: {
+    color: '#ccc',
+  },
+  darkButtonText: {
+    color: 'white',
+  },
+  darkPlusButtonText: {
+    color: 'white',
   },
 });
 
