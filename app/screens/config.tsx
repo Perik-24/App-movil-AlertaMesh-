@@ -1,10 +1,11 @@
 // Este es el componente de la pantalla de configuración, ahora usa el contexto del tema.
 
-import React, { useState, useEffect } from 'react';
-import { View, Text, Switch, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect,useCallback } from 'react';
+import { View, Text, Switch, StyleSheet, TouchableOpacity, Alert, PermissionsAndroid, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PushNotification from 'react-native-push-notification';
 import { useTheme } from '../ThemeContext'; // Importamos el hook useTheme
+import RNBluetoothClassic, { BluetoothDevice } from 'react-native-bluetooth-classic';
 
 const ConfigScreen = () => {
   // Usamos el hook useTheme para acceder al estado y la función del tema.
@@ -13,6 +14,37 @@ const ConfigScreen = () => {
   // Estados para otras opciones de configuración.
   const [vibrateOnAlert, setVibrateOnAlert] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [permissionsGranted, setPermissionsGranted] = useState(false);
+
+  const setupBluetooth = useCallback(async () => {
+      const granted = await requestPermissions();
+      if (granted) {
+        setPermissionsGranted(true);
+      } else {
+        setPermissionsGranted(false);
+        Alert.alert('Permisos necesarios', 'La aplicación necesita permisos de Bluetooth para funcionar.');
+      }
+    }, []);
+  
+    useEffect(() => {
+      setupBluetooth();
+    }, [setupBluetooth]);
+  
+    const requestPermissions = async () => {
+      if (Platform.OS === 'android') {
+        const result = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        ]);
+        return (
+          result[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] === PermissionsAndroid.RESULTS.GRANTED &&
+          result[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] === PermissionsAndroid.RESULTS.GRANTED &&
+          result[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] === PermissionsAndroid.RESULTS.GRANTED
+        );
+      }
+      return true;
+    };
 
   // useEffect para cargar la configuración de vibración y notificaciones.
   useEffect(() => {
@@ -68,6 +100,24 @@ const ConfigScreen = () => {
       'Versión de la aplicación: 1.0.0\n\n© 2025 Alerta Mesh. Todos los derechos reservados.\n\nDesarrollado para ayudarte a mantenerte conectado.',
       [{ text: 'OK' }]
     );
+  };
+
+  const showBondedDevices = async () => {
+    if (!permissionsGranted) {
+      Alert.alert('Permisos no concedidos', 'Por favor, concede los permisos de Bluetooth para continuar.');
+      return;
+    }
+    try {
+      const bondedDevices = await RNBluetoothClassic.getBondedDevices();
+      const deviceNames = bondedDevices.map(d => d.name).join('\n');
+      Alert.alert(
+        'Dispositivos Vinculados',
+        deviceNames || 'No se encontraron dispositivos vinculados.',
+      );
+    } catch (err) {
+      console.error('Error al obtener dispositivos vinculados:', err);
+      Alert.alert('Error', 'No se pudo obtener la lista de dispositivos vinculados.');
+    }
   };
 
   // Función para restablecer la aplicación.
@@ -140,6 +190,13 @@ const ConfigScreen = () => {
           value={notificationsEnabled}
         />
       </View>
+
+      <TouchableOpacity
+        onPress={showBondedDevices}
+        style={[styles.button, themeStyles.buttonPrimary]}
+      >
+        <Text style={styles.buttonText}>Mostrar Dispositivos Vinculados</Text>
+      </TouchableOpacity>
 
       {/* Botón "Acerca de" */}
       <TouchableOpacity

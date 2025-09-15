@@ -9,6 +9,9 @@ import {
   Alert,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
+  SafeAreaView,
+  Dimensions
 } from 'react-native';
 import RNBluetoothClassic, { BluetoothDevice } from 'react-native-bluetooth-classic';
 import {
@@ -23,6 +26,8 @@ import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { useTheme } from '../ThemeContext';
+import MaterialIcons from "react-native-vector-icons/MaterialIcons";
+import Icon from 'react-native-vector-icons/Ionicons';
 
 type RootStackParamList = {
   Tabs: {
@@ -49,10 +54,11 @@ interface DataReceivedEvent {
 
 const DEVICE_NAME = 'ESP32_Alerta';
 const OTHER_PHONE_NAME = 'S22+ de Perik24';
+const { height } = Dimensions.get('window');
 
 const App = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Tabs'>>();
-  const route = useRoute<HomeRouteProp>();
+  //const route = useRoute<HomeRouteProp>();
   const [esp32Device, setEsp32Device] = useState<BluetoothDevice | null>(null);
   const [otherPhoneDevice, setOtherPhoneDevice] = useState<BluetoothDevice | null>(null);
   const [connectedToEsp32, setConnectedToEsp32] = useState(false);
@@ -67,11 +73,10 @@ const App = () => {
 
   const containerStyle = isDarkMode ? styles.darkContainer : styles.lightContainer;
   const cardStyle = isDarkMode ? styles.darkCard : styles.lightCard;
-  const card2Style = isDarkMode ? styles.darkCard2 : styles.lightCard2;
-  const titleStyle = isDarkMode ? styles.darkTitle : styles.lightTitle;
-  const statusTextStyle = isDarkMode ? styles.darkStatusText : styles.lightStatusText;
+  const cardTitleStyle = isDarkMode ? styles.darkCardTitle : styles.lightCardTitle;
+  const cardStatusTextStyle = isDarkMode ? styles.darkCardStatusText : styles.lightCardStatusText;
+  const buttonStyle = isDarkMode ? styles.darkButton : styles.lightButton;
   const buttonTextStyle = isDarkMode ? styles.darkButtonText : styles.lightButtonText;
-  const plusButtonTextStyle = isDarkMode ? styles.darkPlusButtonText : styles.lightPlusButtonText;
 
   const defaultButtons: BotonAlerta[] = [
     { nombre: 'Robo', mensaje: 'Se detectó un intento de robo', prioridad: 'Alta' },
@@ -184,7 +189,7 @@ const App = () => {
           if (data.data) {
             Alert.alert(
               '¡ALERTA RECIBIDA!',
-              'Se recibió una notificación simple desde el otro teléfono.'
+              'Se recibió una alerta desde el otro teléfono.'
             );
           }
         } catch (error) {
@@ -245,24 +250,6 @@ const App = () => {
     }
   };
 
-  const showBondedDevices = async () => {
-    if (!permissionsGranted) {
-      Alert.alert('Permisos no concedidos', 'Por favor, concede los permisos de Bluetooth para continuar.');
-      return;
-    }
-    try {
-      const bondedDevices = await RNBluetoothClassic.getBondedDevices();
-      const deviceNames = bondedDevices.map(d => d.name).join('\n');
-      Alert.alert(
-        'Dispositivos Vinculados',
-        deviceNames || 'No se encontraron dispositivos vinculados.',
-      );
-    } catch (err) {
-      console.error('Error al obtener dispositivos vinculados:', err);
-      Alert.alert('Error', 'No se pudo obtener la lista de dispositivos vinculados.');
-    }
-  };
-
   const sendAlert = async (alerta: BotonAlerta) => {
     if (!permissionsGranted) {
       Alert.alert('Permisos no concedidos', 'Por favor, concede los permisos de Bluetooth para continuar.');
@@ -303,239 +290,261 @@ const App = () => {
   const getPriorityStyle = (prioridad: string) => {
     switch (prioridad) {
       case 'Baja':
-        return styles['card-Baja'];
+        return styles.cardBaja;
       case 'Media':
-        return styles['card-Media'];
+        return styles.cardMedia;
       case 'Alta':
-        return styles['card-Alta'];
+        return styles.cardAlta;
       default:
         return {};
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, containerStyle]}>
-      <View style={[styles.card, cardStyle]}>
-        <Text style={[styles.title, titleStyle]}>Modo de Conexión</Text>
-        {isServerMode ? (
-          <Text style={[styles.statusText, statusTextStyle]}>
-            Modo: Servidor (Esperando Conexión)
-          </Text>
-        ) : (
-          <Text style={[styles.statusText, statusTextStyle]}>
-            Modo: Cliente (Enviando Alertas)
-          </Text>
-        )}
-        {!isListening && !isServerMode && (
-          <Button title="Iniciar como Servidor" onPress={startServerMode} />
-        )}
-      </View>
+    <SafeAreaView style={[styles.safeArea, containerStyle]}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
 
-      <View style={[styles.card, cardStyle]}>
-        <Text style={[styles.title, titleStyle]}>Dispositivo: {DEVICE_NAME}</Text>
-        <View style={styles.statusRow}>
-          <View
-            style={[
-              styles.statusIndicator,
-              { backgroundColor: connectedToEsp32 ? 'green' : 'red' },
-            ]}
-          />
-          <Text style={[styles.statusText, statusTextStyle]}>
-            {connectedToEsp32 ? 'Conectado' : 'Desconectado'}
-          </Text>
+        {/* Tarjeta de Estado de Conexión */}
+        <View style={[styles.card, cardStyle]}>
+          <Text style={[styles.cardTitle, cardTitleStyle]}>Estado</Text>
+          <View style={styles.cardStatusRow}>
+            <Text style={[styles.statusTitle, cardTitleStyle]}>Estado de la Conexión:</Text>
+            <Text style={[styles.statusText, { color: connectedToEsp32 || connectedToOtherPhone ? '#4CAF50' : '#F44336' }]}>
+              {connectedToEsp32 || connectedToOtherPhone ? 'Conectado' : 'Desconectado'}
+            </Text>
+          </View>
         </View>
-        {!connectedToEsp32 ? (
-          <Button title="Conectar al ESP32" onPress={connectToESP32} />
-        ) : (
-          <Button title="Revisar conexión" onPress={checkConnection} />
-        )}
-      </View>
 
-      <View style={[styles.card, cardStyle]}>
-        <Text style={[styles.title, titleStyle]}>Conexión con otro Teléfono</Text>
-        <Text style={statusTextStyle}>Otro Teléfono: {otherPhoneDevice ? 'Emparejado' : 'No emparejado'}</Text>
-        <View style={styles.statusRow}>
-          <View
-            style={[
-              styles.statusIndicator,
-              { backgroundColor: connectedToOtherPhone ? 'green' : 'red' },
-            ]}
-          />
-          <Text style={[styles.statusText, statusTextStyle]}>
-            {connectedToOtherPhone ? 'Conectado' : 'Desconectado'}
-          </Text>
+        {/* Tarjeta de Modo de Conexión */}
+        <View style={[styles.card, cardStyle]}>
+          <Text style={[styles.cardTitle, cardTitleStyle]}>Modo de Conexión</Text>
+          <View style={styles.connectionModeContainer}>
+            <View style={styles.modeTextContainer}>
+              <Text style={[styles.modeText, cardStatusTextStyle]}>Modo Cliente</Text>
+            </View>
+            <View style={styles.modeTextContainer}>
+              <Text style={[styles.modeText, cardStatusTextStyle]}>Modo Servidor</Text>
+            </View>
+          </View>
         </View>
-        {permissionsGranted && !connectedToOtherPhone && !isServerMode && (
-          <Button title="Conectar a otro Celular" onPress={connectToOtherPhone} />
+
+        {/* Sección de botones de conexión */}
+        <View style={styles.buttonGroup}>
+          {!connectedToEsp32 && (
+            <TouchableOpacity style={[styles.actionButton, buttonStyle]} onPress={connectToESP32}>
+              <Text style={buttonTextStyle}>Conectar ESP32</Text>
+            </TouchableOpacity>
+          )}
+          {!connectedToOtherPhone && !isServerMode && (
+            <TouchableOpacity style={[styles.actionButton, buttonStyle]} onPress={connectToOtherPhone}>
+              <Text style={buttonTextStyle}>Conectar Teléfono</Text>
+            </TouchableOpacity>
+          )}
+          {!isServerMode && !isListening && (
+            <TouchableOpacity style={[styles.actionButton, buttonStyle]} onPress={startServerMode}>
+              <Text style={buttonTextStyle}>Iniciar como Servidor</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Sección de Botones de Alerta */}
+        {!isServerMode && (
+          <>
+            <Text style={[styles.sectionTitle, cardTitleStyle]}>Mis Botones de Alerta</Text>
+            <View style={styles.alertButtonsList}>
+              {botones.map((alerta, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[styles.alertButton, getPriorityStyle(alerta.prioridad), cardStyle]}
+                  onPress={() => sendAlert(alerta)}
+                  disabled={!permissionsGranted || (!connectedToEsp32 && !connectedToOtherPhone)}
+                >
+                  <Text style={[styles.alertButtonText, cardTitleStyle]}>{alerta.nombre}</Text>
+                  <Text style={[styles.alertButtonPriorityText, cardStatusTextStyle]}>Prioridad: {alerta.prioridad}</Text>
+                </TouchableOpacity>
+              ))}
+              {/* Botón para agregar nuevo */}
+              <TouchableOpacity
+                style={[styles.alertButton, styles.addButton, cardStyle]}
+                onPress={() => navigation.navigate('NewBtn')}
+                disabled={!permissionsGranted}
+              >
+                <MaterialIcons name="add-circle-outline" size={30} color={isDarkMode ? "#E0E0E0" : "#212121"} />
+                <Text style={[styles.addButtonText, cardTitleStyle]}>Nuevo Botón</Text>
+              </TouchableOpacity>
+            </View>
+          </>
         )}
-        <Button title="Mostrar Dispositivos Vinculados" onPress={showBondedDevices} />
-      </View>
-      
-      {!isServerMode && botones.map((alerta, index) => (
-        <View key={index} style={[styles.card2, card2Style, getPriorityStyle(alerta.prioridad)]}>
-          <Text style={[styles.title2, titleStyle]}>{alerta.nombre}</Text>
-          <TouchableOpacity
-            style={styles.boton}
-            onPress={() => sendAlert(alerta)}
-            disabled={!permissionsGranted}
-          >
-            <Text style={buttonTextStyle}>Enviar ALERTA</Text>
-          </TouchableOpacity>
-        </View>
-      ))}
-      
-      {!isServerMode && (
-        <View style={[styles.card2, card2Style]}>
-          <Text style={[styles.title2, titleStyle]}>Nuevo Botón</Text>
-          <TouchableOpacity
-            style={styles.boton}
-            onPress={() => navigation.navigate('NewBtn')}
-            disabled={!permissionsGranted}
-          >
-            <Text style={[styles.buttonText, plusButtonTextStyle]}>+</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </ScrollView>
+
+        {isListening && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={isDarkMode ? "#E0E0E0" : "#212121"} />
+            <Text style={[styles.loadingText, cardStatusTextStyle]}>Esperando conexión entrante...</Text>
+          </View>
+        )}
+      </ScrollView>
+      </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
+    flex: 1,
+  },
+  scrollContainer: {
+    padding: 20,
+    alignItems: 'center',
     flexGrow: 1,
-    justifyContent: 'flex-start',
-    padding: 16,
+  },
+  mainTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    alignSelf: 'center',
   },
   card: {
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-    marginTop: 5,
-    marginBottom: 5,
+    width: '100%',
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 15,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 8,
   },
-  card2: {
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-    marginTop: 5,
-    marginLeft: 25,
-    marginRight: 25,
-    justifyContent: 'space-between',
-  },
-  'card-Baja': {
-    borderLeftColor: '#28a745',
-    borderLeftWidth: 5,
-  },
-  'card-Media': {
-    borderLeftColor: '#ffc107',
-    borderLeftWidth: 5,
-  },
-  'card-Alta': {
-    borderLeftColor: '#dc3545',
-    borderLeftWidth: 5,
-  },
-  title: {
-    fontSize: 20,
+  cardTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 10,
   },
-  title2: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  statusRow: {
+  cardStatusRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  statusIndicator: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginRight: 10,
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   statusText: {
     fontSize: 16,
+    fontWeight: '600',
   },
-  boton: {
-    backgroundColor: '#dc3545',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-    marginLeft: 25,
-    marginRight: 25,
-  },
-  buttonText: {
-    fontWeight: 'bold',
-  },
-  botonCelular: {
-    backgroundColor: '#007bff',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-    marginLeft: 25,
-    marginRight: 25,
-    marginTop: 20,
-  },
-  buttonGroup: {
+  connectionModeContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     marginTop: 5,
   },
+  modeTextContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  modeText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  buttonGroup: {
+    width: '100%',
+    flexDirection: 'column',
+    gap: 15,
+    marginTop: 5,
+  },
+  actionButton: {
+    width: '100%',
+    padding: 15,
+    borderRadius: 15,
+    alignItems: 'center',
+  },
+  alertButtonsList: {
+    width: '100%',
+    marginTop: 10,
+  },
+  alertButton: {
+    width: '100%',
+    padding: 15,
+    borderRadius: 15,
+    marginBottom: 15,
+    borderLeftWidth: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  alertButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  alertButtonPriorityText: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  addButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    borderLeftWidth: 0,
+  },
+  addButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: 20,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+    gap: 10,
+  },
+  loadingText: {
+    fontSize: 16,
+  },
+  navbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#444444',
+  },
+  navItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  navText: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  
+  // Paleta de colores para Prioridades
+  cardBaja: { borderLeftColor: '#4CAF50' },
+  cardMedia: { borderLeftColor: '#FFC107' },
+  cardAlta: { borderLeftColor: '#F44336' },
 
-  lightContainer: {
-    backgroundColor: '#fff',
-  },
-  lightCard: {
-    backgroundColor: '#f9f9f9',
-  },
-  lightCard2: {
-    backgroundColor: '#f9f9f9',
-  },
-  lightTitle: {
-    color: '#000',
-  },
-  lightStatusText: {
-    color: '#000',
-  },
-  lightButtonText: {
-    color: 'white',
-  },
-  lightPlusButtonText: {
-    color: 'white',
-  },
-
-  darkContainer: {
-    backgroundColor: '#121212',
-  },
-  darkCard: {
-    backgroundColor: '#1e1e1e',
-    shadowColor: '#fff',
-  },
-  darkCard2: {
-    backgroundColor: '#1e1e1e',
-    shadowColor: '#fff',
-  },
-  darkTitle: {
-    color: '#fff',
-  },
-  darkStatusText: {
-    color: '#ccc',
-  },
-  darkButtonText: {
-    color: 'white',
-  },
-  darkPlusButtonText: {
-    color: 'white',
-  },
+  // Estilos de Tema Claro
+  lightContainer: { backgroundColor: '#F0F2F5' },
+  lightCard: { backgroundColor: '#FFFFFF', shadowColor: '#000' },
+  lightCardTitle: { color: '#212121' },
+  lightCardStatusText: { color: '#616161' },
+  lightButton: { backgroundColor: '#E0E0E0' },
+  lightButtonText: { color: '#212121', fontWeight: 'bold' },
+  lightNavbar: { backgroundColor: '#FFFFFF', borderTopColor: '#E0E0E0' },
+  
+  // Estilos de Tema Oscuro
+  darkContainer: { backgroundColor: '#1C1C1E' },
+  darkCard: { backgroundColor: '#2C2C2E', shadowColor: '#fff' },
+  darkCardTitle: { color: '#E0E0E0' },
+  darkCardStatusText: { color: '#B0B0B0' },
+  darkButton: { backgroundColor: '#2C2C2E' },
+  darkButtonText: { color: '#E0E0E0', fontWeight: 'bold' },
+  darkNavbar: { backgroundColor: '#2A2A2A', borderTopColor: '#444444' },
 });
 
 export default App;
